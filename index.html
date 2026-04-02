@@ -47,8 +47,6 @@ canvas#sakura-canvas {
   border-radius:50%;
   object-fit:cover;
 }
-
-/* KEEPING REST OF YOUR CSS EXACTLY SAME (trimmed for brevity here, but you keep all yours) */
 </style>
 </head>
 
@@ -69,47 +67,45 @@ canvas#sakura-canvas {
   <button class="start-btn" onclick="startGame()">let's go →</button>
 </div>
 
-<!-- GAME -->
-<div class="screen" id="screen-game">
-  <div class="progress-bar-wrap">
-    <div class="progress-label">
-      <span>getting to know me</span>
-      <span id="prog-count">0 / 10</span>
+    <!-- GAME SCREEN -->
+    <div class="screen" id="screen-game">
+      <div class="progress-bar-wrap">
+        <div class="progress-label">
+          <span>getting to know me</span>
+          <span id="prog-count">0 / 10</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="prog-fill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="card-stage" id="card-stage"></div>
+
+      <div class="controls">
+        <button class="ctrl-btn" onclick="go(-1)">←</button>
+        <button class="shuffle-btn" onclick="doShuffle()">✦ shuffle</button>
+        <button class="ctrl-btn" onclick="go(1)">→</button>
+      </div>
+
+      <div class="dots" id="dots"></div>
+
+      <div class="music-row" onclick="toggleMusic()">
+        <span class="music-note">♪</span>
+        <div class="music-text">
+          <strong>Pure — Common Gathering</strong>
+          <span id="music-label">tap to play</span>
+        </div>
+        <div class="viz-bars" id="viz-bars">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
     </div>
-    <div class="progress-track">
-      <div class="progress-fill" id="prog-fill" style="width:0%"></div>
-    </div>
-  </div>
-
-  <div class="card-stage" id="card-stage"></div>
-
-  <div class="controls">
-    <button class="ctrl-btn" onclick="go(-1)">←</button>
-    <button class="shuffle-btn" onclick="doShuffle()">✦ shuffle</button>
-    <button class="ctrl-btn" onclick="go(1)">→</button>
-  </div>
-
-  <div class="dots" id="dots"></div>
-
-  <div class="music-row" onclick="toggleMusic()">
-    <span class="music-note">♪</span>
-    <div class="music-text">
-      <strong>Pure — Common Gathering</strong>
-      <span id="music-label">tap to play</span>
-    </div>
-    <div class="viz-bars" id="viz-bars">
-      <span></span><span></span><span></span><span></span><span></span>
-    </div>
-  </div>
-</div>
-
 <!-- DONE -->
 <div class="screen" id="screen-done">
   <div class="done-wrap">
     <div class="done-icons">🌸✨🌷</div>
     <div class="done-title">now you know me a little better</div>
-    <div class="done-sub">thanks for taking the time — means more than you know 🙏🏾</div>
-    <button class="start-btn" onclick="restart()">shuffle & go again</button>
+    <div class="done-sub">thanks for sharing your time! </div>
   </div>
 </div>
 
@@ -131,45 +127,268 @@ const hobbies = [
   { icon:'🧩', label:'Jigsaw Puzzles', text:'Did one with family over winter break and loved every second even the moments when we could not find the last piece.' },
 ];
 
-/* KEEPING YOUR JS LOGIC SAME */
-let order=[],cur=0,seen=0;
+let order = [], cur = 0, busy = false, seen = 0;
+let audioCtx = null, playing = false, musicNodes = [];
 
-function show(id){
-document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-document.getElementById(id).classList.add('active');
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
 }
 
-function startGame(){
-order=[...Array(hobbies.length).keys()];
-cur=0; seen=0;
-show('screen-game');
-buildDeck();
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
 }
 
-function restart(){ startGame(); }
-
-function buildDeck(){
-const stage=document.getElementById('card-stage');
-stage.innerHTML='';
-const h=hobbies[order[cur]];
-stage.innerHTML=`
-<div class="hobby-card">
-<div class="card-icon">${h.icon}</div>
-<div class="card-label">${h.label}</div>
-<div class="card-text">${h.text}</div>
-</div>`;
+function startGame() {
+  order = [...Array(hobbies.length).keys()];
+  shuffle(order);
+  cur = 0; seen = 0; busy = false;
+  show('screen-game');
+  buildDeck();
+  updateDots();
+  updateProgress();
 }
 
-function go(dir){
-cur+=dir;
-if(cur>=hobbies.length){
-show('screen-done');
-return;
+function restart() {
+  stopMusic();
+  startGame();
 }
-if(cur<0) cur=0;
-buildDeck();
+
+function buildDeck() {
+  const stage = document.getElementById('card-stage');
+  stage.innerHTML = '';
+  const total = order.length;
+  for (let layer = 2; layer >= 0; layer--) {
+    const idx = order[(cur + layer) % total];
+    const h = hobbies[idx];
+    const card = document.createElement('div');
+    card.className = 'hobby-card ' + (layer === 0 ? 'front pop-in' : layer === 1 ? 'back1' : 'back2');
+    card.id = 'c' + layer;
+    card.innerHTML = `
+      <div class="card-icon">${h.icon}</div>
+      <div class="card-label">${h.label}</div>
+      <div class="card-text">${h.text}</div>
+      <div class="card-counter">${seen + 1} of ${total}</div>
+    `;
+    stage.appendChild(card);
+  }
 }
+
+function go(dir) {
+  if (busy) return;
+  busy = true;
+  const front = document.getElementById('c0');
+  front.classList.remove('front');
+  front.classList.add(dir > 0 ? 'exit-right' : 'exit-left');
+  burstPetals(front);
+  playPop();
+  setTimeout(() => {
+    if (dir > 0) {
+      seen = Math.min(seen + 1, order.length - 1);
+      cur = (cur + 1) % order.length;
+    } else {
+      cur = (cur - 1 + order.length) % order.length;
+    }
+    buildDeck();
+    updateDots();
+    updateProgress();
+    busy = false;
+    if (seen >= order.length - 1 && dir > 0) {
+      setTimeout(() => show('screen-done'), 500);
+    }
+  }, 370);
+}
+
+function doShuffle() {
+  if (busy) return;
+  busy = true;
+  const stage = document.getElementById('card-stage');
+  const cards = stage.querySelectorAll('.hobby-card');
+  cards.forEach((c, i) => {
+    c.style.transition = 'transform 0.28s, opacity 0.22s';
+    c.style.transform = `translateY(${-18 + i * 7}px) rotate(${(Math.random() - .5) * 24}deg) scale(0.86)`;
+    c.style.opacity = '0.2';
+  });
+  burstPetals(document.getElementById('c0'));
+  playPop();
+  setTimeout(() => {
+    shuffle(order); cur = 0; seen = 0;
+    buildDeck(); updateDots(); updateProgress();
+    busy = false;
+  }, 320);
+}
+
+function updateDots() {
+  const c = document.getElementById('dots');
+  c.innerHTML = '';
+  order.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === cur ? ' on' : '');
+    c.appendChild(d);
+  });
+}
+
+function updateProgress() {
+  const pct = Math.round((seen / order.length) * 100);
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('prog-count').textContent = seen + ' / ' + order.length;
+}
+
+function burstPetals(el) {
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const wrap = document.getElementById('game-wrap').getBoundingClientRect();
+  const cx = rect.left - wrap.left + rect.width / 2;
+  const cy = rect.top - wrap.top + rect.height / 2;
+  const emojis = ['🌸', '🌷', '✨', '🌸', '🌷'];
+  emojis.forEach((e, i) => {
+    const p = document.createElement('div');
+    p.className = 'petal-burst';
+    p.textContent = e;
+    const angle = (i / emojis.length) * 2 * Math.PI;
+    const dist = 55 + Math.random() * 45;
+    p.style.setProperty('--tx', Math.cos(angle) * dist + 'px');
+    p.style.setProperty('--ty', Math.sin(angle) * dist + 'px');
+    p.style.left = cx + 'px';
+    p.style.top = cy + 'px';
+    document.getElementById('game-wrap').appendChild(p);
+    setTimeout(() => p.remove(), 1100);
+  });
+}
+
+function playPop() {
+  try {
+    const c = new (window.AudioContext || window.webkitAudioContext)();
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = 'sine';
+    o.frequency.value = 660;
+    o.frequency.exponentialRampToValueAtTime(880, c.currentTime + 0.1);
+    g.gain.setValueAtTime(0.07, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.28);
+    o.connect(g); g.connect(c.destination);
+    o.start(); o.stop(c.currentTime + 0.3);
+  } catch(e) {}
+}
+
+function startMusic() {
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const scale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
+    const melody = [0, 2, 4, 7, 4, 2, 0, 5, 2, 4, 7, 4, 0, 2, 4, 2];
+    let t = audioCtx.currentTime + 0.2;
+    const gap = 1.0;
+
+    melody.forEach((ni, i) => {
+      const freq = scale[ni % scale.length];
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0, t + i * gap);
+      g.gain.linearRampToValueAtTime(0.055, t + i * gap + 0.1);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * gap + 0.85);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t + i * gap); o.stop(t + i * gap + 0.95);
+      musicNodes.push(o, g);
+    });
+
+    [[0,2,4],[4,5,7],[2,4,7],[0,2,5]].forEach((ch, ci) => {
+      ch.forEach(ni => {
+        const freq = scale[ni] * 0.5;
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = 'sine'; o.frequency.value = freq;
+        const st = t + ci * gap * 4;
+        g.gain.setValueAtTime(0, st);
+        g.gain.linearRampToValueAtTime(0.022, st + 0.4);
+        g.gain.linearRampToValueAtTime(0.018, st + gap * 3.5);
+        g.gain.exponentialRampToValueAtTime(0.001, st + gap * 4.2);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(st); o.stop(st + gap * 4.3);
+        musicNodes.push(o, g);
+      });
+    });
+
+    playing = true;
+    document.getElementById('viz-bars').classList.add('live');
+    document.getElementById('music-label').textContent = 'playing softly';
+  } catch(e) {}
+}
+
+function stopMusic() {
+  musicNodes.forEach(n => { try { n.stop ? n.stop() : n.disconnect(); } catch(e) {} });
+  musicNodes = [];
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  playing = false;
+  const vb = document.getElementById('viz-bars');
+  const ml = document.getElementById('music-label');
+  if (vb) vb.classList.remove('live');
+  if (ml) ml.textContent = 'tap to play';
+}
+
+function toggleMusic() { playing ? stopMusic() : startMusic(); }
+
+// SAKURA CANVAS
+const canvas = document.getElementById('sakura-canvas');
+const ctx = canvas.getContext('2d');
+let petals = [];
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+
+function makePetal() {
+  return {
+    x: Math.random() * canvas.width,
+    y: -20,
+    size: 7 + Math.random() * 11,
+    speedY: 0.55 + Math.random() * 0.95,
+    speedX: -0.4 + Math.random() * 0.8,
+    rotation: Math.random() * 360,
+    rotSpeed: -0.8 + Math.random() * 1.6,
+    opacity: 0.5 + Math.random() * 0.45,
+    sway: Math.random() * 2 * Math.PI,
+    swaySpeed: 0.012 + Math.random() * 0.018,
+  };
+}
+
+function drawPetal(p) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.rotation * Math.PI / 180);
+  ctx.globalAlpha = p.opacity;
+  ctx.fillStyle = '#f4a0b5';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, p.size * 0.52, p.size, 0, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  ctx.beginPath();
+  ctx.ellipse(-p.size * 0.08, -p.size * 0.18, p.size * 0.18, p.size * 0.48, 0, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.restore();
+}
+
+function animateSakura() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (petals.length < 42 && Math.random() < 0.055) petals.push(makePetal());
+  petals.forEach(p => {
+    p.sway += p.swaySpeed;
+    p.x += p.speedX + Math.sin(p.sway) * 0.55;
+    p.y += p.speedY;
+    p.rotation += p.rotSpeed;
+    drawPetal(p);
+  });
+  petals = petals.filter(p => p.y < canvas.height + 30);
+  requestAnimationFrame(animateSakura);
+}
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+animateSakura();
 </script>
-
 </body>
 </html>
