@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>a little about me ✨</title>
+ <style>
+  .avatar img {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+</style>
+
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -378,7 +387,9 @@
 
     <!-- INTRO SCREEN -->
     <div class="screen active" id="screen-intro">
-      <div class="avatar">🌸</div>
+      <div class="avatar">
+  <img src="images/avatar.png" alt="Profile avatar" />
+      </div>
       <div class="intro-title">hi, a little about me</div>
       <div class="intro-sub">tap through the cards to get to know me — a little piece at a time ✨</div>
       <button class="start-btn" onclick="startGame()">let's go →</button>
